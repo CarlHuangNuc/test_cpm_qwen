@@ -55,7 +55,7 @@ logger = setup_logger()
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--port', type=int , default=32550)
-ap.add_argument('--model', type=str , default="openbmb/MiniCPM-o-2_6", help="huggingface model name or local path")
+ap.add_argument('--model', type=str , default="/mnt/huangke1/LIM/openbmb/MiniCPM-o-2_6", help="huggingface model name or local path")
 args = ap.parse_args()
 
 
@@ -353,7 +353,7 @@ class StreamManager:
                         self.sys_prompt_init(2)
                     else:
                         self.sys_prompt_init(1)
-                    
+                
                 self.prefill(audio_bytes, image, False)
                 
                 self.vad_sequence.append(audio_bytes)
@@ -438,6 +438,7 @@ class StreamManager:
             if (len(self.audio_prefill) == (1000/self.audio_chunk)) or (is_end and len(self.audio_prefill)>0):
                 time_prefill = time.time()
                 input_audio_path = self.savedir + f"/input_audio_log/input_audio_{self.input_audio_id}.wav"
+                print(input_audio_path)
                 self.merge_wav_files(self.audio_prefill, input_audio_path)
                 with open(input_audio_path,"rb") as wav_io:
                     signal, sr = soundfile.read(wav_io, dtype='float32')
@@ -469,6 +470,8 @@ class StreamManager:
                             tokenizer=self.minicpmo_tokenizer,
                             max_slice_nums=slice_nums,
                         )
+                        print("dddddddddddddddddddddddddddd")
+                        print(res)
 
                 self.input_audio_id += 1
             return True
@@ -521,6 +524,7 @@ class StreamManager:
                     text = ''
                     self.speaking_time_stamp = time.time()
                     try:
+
                         for r in self.minicpmo_model.streaming_generate(
                             session_id=str(self.session_id),
                             tokenizer=self.minicpmo_tokenizer,
@@ -598,7 +602,123 @@ class StreamManager:
         logger.info(f"uid: {uid} set customized_options to {options}")
 
 
+    def test_carl(self):
+
+        import copy
+        import wave
+        import pyaudio
+        import math
+
+        print("uuuuuuuuuuuuuuu2222222222222222")
+
+        
+        self.session_id = self.session_id + 1
+
+
+        self.stop_response = True
+        self.sys_prompt_flag = False
+        self.reset()
+        self.upload_customized_audio(None,None)
+
+        options = {'hd_video': False, 'use_audio_prompt': 1, 'vad_threshold': 0.8, 'voice_clone_prompt': '你是一个AI助手。你能接受视频，音频和文本输入>并输出语音和文本。模仿输入音频中的声音特征。', 'assistant_prompt': '作为助手，你将使用这种声音风格说话。'}
+
+        self.update_customized_options("carl_test555",options)
+
+        if self.sys_prompt_flag is False:
+            self.all_start_time = time.time()
+            self.sys_prompt_flag = True
+            self.sys_prompt_init(1)
+
+        audio_path = "/mnt/huangke1/LIM/test_code/qwen/test_cpm_qwen/log_data/32550/1751525672.7709742/input_audio/all_input_audio_0.wav"
+        audio_np, sr = librosa.load(audio_path, sr=16000, mono=True)
+        tap = int(16000*0.2)
+        time_len = math.ceil(len(audio_np) / tap)
+
+        for i in range(time_len):
+            audio = audio_np[tap*i:tap*(i+1)] 
+            soundfile.write("./output_test.wav", audio.T, 16000)
+            with open('./output_test.wav', 'rb') as file:
+                audio_bytes = file.read()
+            if i == int(time_len-1):
+                self.prefill(audio_bytes, None, True)                                    
+            else:
+                self.prefill(audio_bytes, None, False)
+                
+
+        logger.info("streaming complete\n")
+        logger.info("=== model gen start ===")
+        time_gen = time.time()
+        input_audio_path = self.savedir + f"/input_audio/all_input_audio_{self.input_audio_id}.wav"
+        self.merge_wav_files(self.audio_input, input_audio_path)
+        audio_stream = None
+        print("hhhhhhhhhhhhhhhhhhhh")
+        print(input_audio_path)
+
+        try:
+            with open(input_audio_path, 'rb') as wav_file:
+                audio_stream = wav_file.read()
+        except FileNotFoundError:
+            print(f"File {input_audio_path} not found.")
+        #yield base64.b64encode(audio_stream).decode('utf-8'), "assistant:\n"
+
+        print('=== gen start: ', time.time() - time_gen)
+        first_time = True
+        temp_time = time.time()
+        with torch.inference_mode():
+            if self.stop_response:
+                self.generate_end()
+                return
+    
+            self.minicpmo_model.config.stream_input=True
+            msg = {"role":"user", "content": self.cnts}
+            msgs = [msg]
+            text = ''
+            self.speaking_time_stamp = time.time()
+
+            try:
+                for r in self.minicpmo_model.streaming_generate(session_id=str(self.session_id),
+                    tokenizer=self.minicpmo_tokenizer,
+                    generate_audio=True):
+
+                    if self.stop_response:
+                        self.generate_end()
+                        return
+                    audio_np, sr, text = r["audio_wav"], r["sampling_rate"], r["text"]
+                    output_audio_path = self.savedir + f'/output_audio_log/output_audio_{self.output_audio_id}.wav'
+                    self.output_audio_id += 1
+                    soundfile.write(output_audio_path, audio_np, samplerate=sr)
+                    audio_stream = None
+                    try:
+                        with open(output_audio_path, 'rb') as wav_file:
+                            audio_stream = wav_file.read()
+                    except FileNotFoundError:
+                        print(f"File {output_audio_path} not found.")
+                    temp_time1 = time.time()
+                    print('text: ', text)
+                    self.speaking_time_stamp += self.cycle_wait_time
+            except Exception as e:
+                logger.error(f"Error happened during generation: {str(e)}")
+
+
+        '''
+        except Exception as e:
+            logger.error(f"发生异常:{e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+        finally:
+            logger.info(f"uid {self.uid}: generation finished!")
+            self.generate_end()
+        '''
+        print("ggggggggggggggggggggggggg")
+        exit()
+
+        return
+
+
 stream_manager = StreamManager()
+stream_manager.test_carl()
 
 
 @app.on_event("startup")
@@ -933,4 +1053,5 @@ async def health_check():
 
 
 if __name__ == "__main__":
+    
     uvicorn.run(app, host="0.0.0.0", port=args.port)
