@@ -122,7 +122,7 @@ class StreamManager:
         self.cycle_wait_time = 12800/24000 + 0.15
         self.extra_wait_time = 2.5
         self.server_wait = True
-        
+
         self.past_session_id = 0
         self.sys_prompt_init(0)
         self.session_id += 1
@@ -254,18 +254,23 @@ class StreamManager:
         self.msg_type = msg_type
         msgs = [sys_msg]
         if self.customized_options is not None:
+            print("carl test close custom ...")
+            '''
             if self.customized_options['use_audio_prompt'] > 0:
                 self.minicpmo_model.streaming_prefill(
                     session_id=str(self.session_id),
                     msgs=msgs,
                     tokenizer=self.minicpmo_tokenizer,
                 )
+            '''    
         if msg_type == 0:
+            '''
             self.minicpmo_model.streaming_prefill(
                 session_id=str(self.session_id),
                 msgs=msgs,
                 tokenizer=self.minicpmo_tokenizer,
             )
+            '''
             
         self.savedir = os.path.join(f"./log_data/{args.port}/", str(time.time()))
         if not os.path.exists(self.savedir):
@@ -296,8 +301,9 @@ class StreamManager:
             self.audio_prefill = []
             self.audio_input = []
             self.image_prefill = None
-            
-            if self.minicpmo_model.llm_past_key_values[0][0].shape[2]>8192:
+        
+            #if self.minicpmo_model.llm_past_key_values[0][0].shape[2]>8192:
+            if True:
                 self.session_id += 1  # to clear all kv cache
                 self.sys_prompt_flag = False
 
@@ -434,7 +440,8 @@ class StreamManager:
                 if self.customized_options['hd_video']:
                     slice_nums = 6
                 else:
-                    return True
+                    slice_nums = 6
+                    #return True
             if (len(self.audio_prefill) == (1000/self.audio_chunk)) or (is_end and len(self.audio_prefill)>0):
                 time_prefill = time.time()
                 input_audio_path = self.savedir + f"/input_audio_log/input_audio_{self.input_audio_id}.wav"
@@ -460,7 +467,7 @@ class StreamManager:
                         cnts = ["<unit>", self.image_prefill, audio_np]
                     else:
                         cnts = [audio_np]
-                        
+                    
                     if cnts is not None:
                         msg = {"role":"user", "content": cnts}
                         msgs = [msg]
@@ -609,17 +616,9 @@ class StreamManager:
         import pyaudio
         import math
 
-        print("uuuuuuuuuuuuuuu2222222222222222")
-
-        
-        self.session_id = self.session_id + 1
-
-
         self.stop_response = True
         self.sys_prompt_flag = False
         self.reset()
-        self.upload_customized_audio(None,None)
-
         options = {'hd_video': False, 'use_audio_prompt': 1, 'vad_threshold': 0.8, 'voice_clone_prompt': '你是一个AI助手。你能接受视频，音频和文本输入>并输出语音和文本。模仿输入音频中的声音特征。', 'assistant_prompt': '作为助手，你将使用这种声音风格说话。'}
 
         self.update_customized_options("carl_test555",options)
@@ -676,10 +675,12 @@ class StreamManager:
             self.speaking_time_stamp = time.time()
 
             try:
+                print("uuuuuuuuuuuuuuuuuuuuuuuuuuu")
                 for r in self.minicpmo_model.streaming_generate(session_id=str(self.session_id),
                     tokenizer=self.minicpmo_tokenizer,
                     generate_audio=True):
 
+                    print("eeeeeeeeee")
                     if self.stop_response:
                         self.generate_end()
                         return
